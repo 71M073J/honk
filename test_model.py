@@ -273,6 +273,12 @@ def eval_dataset(model, base_commands_folder="./data/speech_commands_v0.01/", va
         print(labelNames[np.argmax(confidences)], np.max(confidences))
 
 
+def load_bin_dataset(dataset, dtype, shape):
+    with open(dataset) as f:
+        d = np.fromfile(f, dtype=dtype).reshape(shape)
+        return d
+
+
 if __name__ == "__main__":
     base_commands = "./data/speech_commands_v0.01/"
     m = Honk()
