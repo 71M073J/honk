@@ -1,15 +1,9 @@
-import argparse
-import json
 import os
 import wave
 
 import numpy as np
 import torch
 import torch.nn as nn
-# import pyaudio
-# import requests
-import torch.nn.functional as F
-from torch.autograd import Variable
 from torch.utils.data import Dataset
 
 from utils.manage_audio import AudioPreprocessor
