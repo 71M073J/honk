@@ -1,19 +1,9 @@
 from __future__ import print_function
-import argparse
-import os
-import random
-import sys
-import wave
+
 
 import librosa
 import numpy as np
-import pcen
-import pyaudio
 
-def set_speech_format(f):
-    f.setnchannels(1)
-    f.setsampwidth(2)
-    f.setframerate(16000)
 
 class AudioPreprocessor(object):
     def __init__(self, sr=16000, n_dct_filters=40, n_mels=40, f_max=4000, f_min=20, n_fft=480, hop_ms=10):
