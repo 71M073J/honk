@@ -188,7 +188,7 @@ def save10kdataset():
 
 def save500dataset():
     coms = "yes,no,up,down,left,right,on,off,stop,go".split(",")
-
+    labelNames = "silence,unknown,yes,no,up,down,left,right,on,off,stop,go".split(",")
     for h in ["tune", "test"]:
         d = VoiceCommandDataset(base_folder="./data/speech_commands_v0.01/", variant=h)
         alphacoms = d.commands
@@ -278,11 +278,21 @@ def load_bin_dataset(dataset, dtype, shape):
         d = np.fromfile(f, dtype=dtype).reshape(shape)
         return d
 
+def fix_weight_files(m):
+    objs = [list(m.children())[0][1], list(m.children())[0][4], list(m.children())[1][0]]
+    objs2 = []
+    for x in objs:
+        objs2 = objs2 + [x.bias.detach().numpy(), x.weight.detach().numpy()]
+    for i in range(6):
+        with open(f"./new_weights/weight_{i}_path.bin", "wb") as fd:
+            arr = objs2[i]
+            arr.astype("<f4").tofile(fd)  # Convert to little endian and save.
 
 if __name__ == "__main__":
     base_commands = "./data/speech_commands_v0.01/"
     m = Honk()
     m.load_state_dict(torch.load("honk.pth.tar", map_location=None))
-
+    fix_weight_files(m)
+    #quit()
     eval_files(m)
     eval_dataset(m)
