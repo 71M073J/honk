@@ -17,7 +17,8 @@ class AudioPreprocessor(object):
     def compute_mfccs(self, data):
         # with open("./test.txt", "w") as f:
         #    print("{" + ",".join(["" + ",".join([str(y) for y in x]) + "" for x in self.dct_filters]) + "}", file=f)
-
+        #data = np.sin(np.arange(16000))
+        #data = np.zeros(16000)
         data = librosa.feature.melspectrogram(
             data,
             sr=self.sr,
@@ -34,7 +35,7 @@ class AudioPreprocessor(object):
         # data = [np.matmul(self.dct_filters, np.atleast_2d(x).T) for x in data.T]
         # this is, IMO, more clear what's going on (should do the exactly same thing as above line)
         data = np.array(data, order="F").astype(np.float32)
-
+        #data = np.array(data).astype(np.float32)
         return data
 
     #def compute_pcen(self, data):

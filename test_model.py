@@ -1,6 +1,8 @@
+import json
 import os
 import wave
 
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.nn as nn
@@ -278,20 +280,75 @@ def load_bin_dataset(dataset, dtype, shape):
         d = np.fromfile(f, dtype=dtype).reshape(shape)
         return d
 
-def fix_weight_files(m):
+def fix_weight_files(m, prefix="./new_weights"):
     objs = [list(m.children())[0][1], list(m.children())[0][4], list(m.children())[1][0]]
     objs2 = []
     for x in objs:
         objs2 = objs2 + [x.bias.detach().numpy(), x.weight.detach().numpy()]
     for i in range(6):
-        with open(f"./new_weights/weight_{i}_path.bin", "wb") as fd:
-            arr = objs2[i]
+        with open(f"{prefix}/weight_{i}_path.bin", "wb") as fd:
+            arr = objs2[i].T
             arr.astype("<f4").tofile(fd)  # Convert to little endian and save.
+
+def test_weights(m):
+    objs = [list(m.children())[0][1], list(m.children())[0][4], list(m.children())[1][0]]
+    objs2 = []
+    objs3 = []
+    np.set_printoptions(threshold=123123123123)
+    for x in objs:
+        objs2 = objs2 + [x.bias.detach().numpy().shape, x.weight.detach().numpy().shape]
+        objs3 = objs3 + [x.bias.detach().numpy(), x.weight.detach().numpy()]
+    for i in range(0,6,1):
+        with open(f"./new_weights/weight_{i}_path.bin", "rb") as fd:
+            arr = np.fromfile(fd, dtype="<f4").reshape(objs2[i])  # Convert to little endian and save.
+        with open(f"./new_weights/old_weights/weight_{i}_path.bin", "rb") as fd:
+            arr2 = np.fromfile(fd, dtype="<f4").reshape(objs2[i])  # Convert to little endian and save.
+        with open(f"E:/Users/timotej999/Documents/HPVM/hpvm-tuning-android/singularity/android-approxhpvm"
+                  f"-demo_mobilenet/app/src/main/assets/models/honk/weight_{i}_path.bin", "rb") as fd:
+            arr3 = np.fromfile(fd, dtype="<f4").reshape(objs2[i])  # Convert to little endian and save.
+        test = objs3[i] - arr3
+        #print(test)
+        print(test.sum())
+    #m.eval()
+    print(m.forward(torch.Tensor(np.zeros((1,101, 40)))))
+    with open("test.txt") as f:
+        inp = f.read().replace("arrayOf", "").replace("floatArrayOf", "").replace("F", "").replace("(", "[").replace(")", "]").replace("\n", "")
+        print(inp)
+        inp = json.loads(inp)
+        inp = np.array(inp)
+        print(m.forward(torch.Tensor(inp).unsqueeze(0)))
+
+def arr_to_kotlin_code(arr, filename):
+    with open(filename, "w") as f:
+        print(",".join(str(arr).split()).replace("],[", "F],\n[").replace(",", "F,").replace("]F,", "],")
+          .replace("[[[", "arrayOf([").replace("[", "floatArrayOf(").replace("]]]", "F)\n)").replace("]", ")")
+            .replace("(f", "(\nf"), file=f)
 
 if __name__ == "__main__":
     base_commands = "./data/speech_commands_v0.01/"
+    d = VoiceCommandDataset(base_commands, "tune")
+    torch.set_printoptions(profile="full")
+    np.set_printoptions(threshold=123123123123, precision=123)
+    print(d.commands, np.sort(d.commands), np.argsort(d.commands))
     m = Honk()
     m.load_state_dict(torch.load("honk.pth.tar", map_location=None))
+    for h in range(1):
+        for i in range(3):
+            print(i + np.cumsum(d.lengths)[h], h)#
+            confidences = m.forward(d[i + np.cumsum(d.lengths)[h]]).detach().numpy()
+            print(labelNames[np.argmax(confidences)], np.max(confidences), confidences)
+
+    h = 0
+    i = 1 + np.cumsum(d.lengths)[h]
+    arr_to_kotlin_code(d[i].detach().numpy(), "./kotlinarr.txt")
+    #plt.imshow(d[i])
+    confidences = m.forward(d[i]).detach().numpy()
+    print(labelNames[np.argmax(confidences)], np.max(confidences), confidences)
+    print()
+    quit()
+    fix_weight_files(m, "./new_weights/test_dir")
+    test_weights(m)
+    quit()
     fix_weight_files(m)
     #quit()
     eval_files(m)
