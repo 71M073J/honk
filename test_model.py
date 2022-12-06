@@ -287,7 +287,7 @@ def fix_weight_files(m, prefix="./new_weights"):
         objs2 = objs2 + [x.bias.detach().numpy(), x.weight.detach().numpy()]
     for i in range(6):
         with open(f"{prefix}/weight_{i}_path.bin", "wb") as fd:
-            arr = objs2[i].T
+            arr = objs2[i] if i < 5 else objs2[i].T
             arr.astype("<f4").tofile(fd)  # Convert to little endian and save.
 
 def test_weights(m):
@@ -332,11 +332,12 @@ if __name__ == "__main__":
     print(d.commands, np.sort(d.commands), np.argsort(d.commands))
     m = Honk()
     m.load_state_dict(torch.load("honk.pth.tar", map_location=None))
-    for h in range(1):
-        for i in range(3):
-            print(i + np.cumsum(d.lengths)[h], h)#
-            confidences = m.forward(d[i + np.cumsum(d.lengths)[h]]).detach().numpy()
-            print(labelNames[np.argmax(confidences)], np.max(confidences), confidences)
+    fix_weight_files(m, "./new_weights_hopefully")
+    #for h in range(1):
+    #    for i in range(3):
+    #        print(i + np.cumsum(d.lengths)[h], h)#
+    #        confidences = m.forward(d[i + np.cumsum(d.lengths)[h]]).detach().numpy()
+    #        print(labelNames[np.argmax(confidences)], np.max(confidences), confidences)
 
     h = 0
     i = 1 + np.cumsum(d.lengths)[h]
