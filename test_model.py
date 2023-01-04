@@ -7,19 +7,21 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch.utils.data import Dataset
-
+import librosa
 from utils.manage_audio import AudioPreprocessor
+import scipy.io.wavfile
 
 labelNames = "silence,unknown,yes,no,up,down,left,right,on,off,stop,go".split(",")
 
 
 class VoiceCommandDataset(Dataset):
-    def __init__(self, base_folder, variant="tune", transform=None, target_transform=None):
+    def __init__(self, base_folder, variant="tune", transform=None, target_transform=None, preprocessed=True):
+        self.preprocessed = preprocessed
         self.transform = transform
         self.target_transform = target_transform
         self.sound_folder = base_folder
         self.variant = variant
-        self.ver = variant == "tune"
+        self.ver = (variant == "tune") + (variant == "all") * 2
         self.lengths = []
         self.commands = []
         self.audio_processor = AudioPreprocessor()
@@ -38,30 +40,53 @@ class VoiceCommandDataset(Dataset):
 
                 if i % 2 == self.ver:
                     self.lengths[c] += 1
+                elif self.ver == 2:
+                    self.lengths[c] += 1
             c += 1
 
     def __len__(self):
         return sum(self.lengths)
 
     def __getitem__(self, idx):
-        n = idx
-        for idn in range(len(self.lengths) + 1):
-            if n < 0:
-                c = self.commands[idn - 1]
-                # print(len(os.listdir(os.path.join(self.sound_folder, c))),2 * n + (1 - self.ver))
-                filename = os.listdir(os.path.join(self.sound_folder, c))[2 * n + (1 - self.ver)]
-                fp = os.path.join(os.path.join(self.sound_folder, c), filename)
-                with wave.open(fp) as f:
-                    data = np.frombuffer(f.readframes(16000), dtype=np.int16) / 32768.
-                    dimension_fix = np.zeros(16000)
-                    dimension_fix[0:data.shape[0]] = data
-                    sound = torch.from_numpy(self.audio_processor.compute_mfccs(dimension_fix).squeeze(2)).unsqueeze(
-                        0)
-                    sound = torch.autograd.Variable(sound, requires_grad=False)
-                    label = c
-                break
-            else:
-                n -= self.lengths[idn]
+        if self.ver != 2:
+            n = idx
+            for idn in range(len(self.lengths) + 1):
+                if n < 0:
+                    c = self.commands[idn - 1]
+                    # print(len(os.listdir(os.path.join(self.sound_folder, c))),2 * n + (1 - self.ver))
+                    filename = os.listdir(os.path.join(self.sound_folder, c))[2 * n + (1 - self.ver)]
+                    fp = os.path.join(os.path.join(self.sound_folder, c), filename)
+                    with wave.open(fp) as f:
+                        data = np.frombuffer(f.readframes(16000), dtype=np.int16) / 32768.
+                        dimension_fix = np.zeros(16000)
+                        dimension_fix[0:data.shape[0]] = data
+                        if self.preprocessed:
+                            sound = torch.from_numpy(
+                                self.audio_processor.compute_mfccs(dimension_fix).squeeze(2)).unsqueeze(
+                                0)
+                            sound = torch.autograd.Variable(sound, requires_grad=False)
+                        else:
+                            sound = dimension_fix
+                        label = c
+                    break
+                else:
+                    n -= self.lengths[idn]
+        else:
+            idxs = np.cumsum(np.array(self.lengths)) - idx
+            idn = np.argmax(idxs > 0)
+            c = self.commands[idn]
+            idxs2 = np.zeros(len(idxs) + 1, dtype=np.int32)
+            idxs2[1:] = idxs
+            # print(len(os.listdir(os.path.join(self.sound_folder, c))),2 * n + (1 - self.ver))
+            filename = os.listdir(os.path.join(self.sound_folder, c))[idx - idxs2[idn]]
+            fp = os.path.join(os.path.join(self.sound_folder, c), filename)
+            with wave.open(fp) as f:
+                data = np.frombuffer(f.readframes(16000), dtype=np.int16)
+                dimension_fix = np.zeros(16000)
+                dimension_fix[0:data.shape[0]] = data
+                sound = dimension_fix
+                label = c
+
         if self.transform:
             sound = self.transform(sound)
         if self.target_transform:
@@ -280,6 +305,7 @@ def load_bin_dataset(dataset, dtype, shape):
         d = np.fromfile(f, dtype=dtype).reshape(shape)
         return d
 
+
 def fix_weight_files(m, prefix="./new_weights"):
     objs = [list(m.children())[0][1], list(m.children())[0][4], list(m.children())[1][0]]
     objs2 = []
@@ -290,6 +316,7 @@ def fix_weight_files(m, prefix="./new_weights"):
             arr = objs2[i] if i < 5 else objs2[i].T
             arr.astype("<f4").tofile(fd)  # Convert to little endian and save.
 
+
 def test_weights(m):
     objs = [list(m.children())[0][1], list(m.children())[0][4], list(m.children())[1][0]]
     objs2 = []
@@ -298,7 +325,7 @@ def test_weights(m):
     for x in objs:
         objs2 = objs2 + [x.bias.detach().numpy().shape, x.weight.detach().numpy().shape]
         objs3 = objs3 + [x.bias.detach().numpy(), x.weight.detach().numpy()]
-    for i in range(0,6,1):
+    for i in range(0, 6, 1):
         with open(f"./new_weights/weight_{i}_path.bin", "rb") as fd:
             arr = np.fromfile(fd, dtype="<f4").reshape(objs2[i])  # Convert to little endian and save.
         with open(f"./new_weights/old_weights/weight_{i}_path.bin", "rb") as fd:
@@ -307,24 +334,113 @@ def test_weights(m):
                   f"-demo_mobilenet/app/src/main/assets/models/honk/weight_{i}_path.bin", "rb") as fd:
             arr3 = np.fromfile(fd, dtype="<f4").reshape(objs2[i])  # Convert to little endian and save.
         test = objs3[i] - arr3
-        #print(test)
+        # print(test)
         print(test.sum())
-    #m.eval()
-    print(m.forward(torch.Tensor(np.zeros((1,101, 40)))))
+    # m.eval()
+    print(m.forward(torch.Tensor(np.zeros((1, 101, 40)))))
     with open("test.txt") as f:
-        inp = f.read().replace("arrayOf", "").replace("floatArrayOf", "").replace("F", "").replace("(", "[").replace(")", "]").replace("\n", "")
+        inp = f.read().replace("arrayOf", "").replace("floatArrayOf", "").replace("F", "").replace("(", "[").replace(
+            ")", "]").replace("\n", "")
         print(inp)
         inp = json.loads(inp)
         inp = np.array(inp)
         print(m.forward(torch.Tensor(inp).unsqueeze(0)))
 
+
 def arr_to_kotlin_code(arr, filename):
     with open(filename, "w") as f:
         print(",".join(str(arr).split()).replace("],[", "F],\n[").replace(",", "F,").replace("]F,", "],")
-          .replace("[[[", "arrayOf([").replace("[", "floatArrayOf(").replace("]]]", "F)\n)").replace("]", ")")
-            .replace("(f", "(\nf"), file=f)
+              .replace("[[[", "arrayOf([").replace("[", "floatArrayOf(").replace("]]]", "F)\n)").replace("]", ")")
+              .replace("(f", "(\nf"), file=f)
+
+
+talking = None
+random = None
+gauss = None
+
+def add_noise_to_dataset_and_save():
+    def add_noise_to_sound(sound, type, strength):
+        sound = sound / np.abs(sound).max()
+        if type == "white":
+            global random
+            if random is None:
+                random = ((np.random.random(16000) - 0.5) * 2)
+                random = random / np.abs(random).max()
+            sound = sound + (random * (strength / 100.))
+        elif type == "gaussian":
+            global gauss
+            if gauss is None:
+                gauss = np.random.normal(0, 1, 16000)
+                gauss = gauss / np.abs(gauss).max()
+            sound = sound + (gauss * (strength / 100.))
+        elif type == "talking":
+            global talking
+            if not os.path.exists("talking.wav"):
+                y, s = librosa.load("Small Crowd Talking Ambience [TubeRipper.com].wav", sr=16000, offset=44,
+                                    duration=1)
+                with wave.open("talking.wav", "w") as f:
+                    f.setnchannels(1)
+                    f.setsampwidth(2)
+                    f.setframerate(16000)
+                    f.writeframes((y * (2 ** 15)).astype(np.int16))
+
+            elif talking is None:
+                with wave.open("talking.wav") as f:
+                    talking = np.frombuffer(f.readframes(16000), dtype=np.int16)
+            sound = sound + (talking / 32768.) * (strength / 100.)
+        sound = sound / np.abs(sound).max()
+        return sound
+
+    base_commands = "./data/speech_commands_v0.01/"
+    variant = "tune"
+    for variant in ["test", "tune"]:
+        d = VoiceCommandDataset(base_commands, variant=variant, preprocessed=False)
+        arr = np.zeros((len(d), 1, 101, 40), dtype=np.int16)
+        for strength in [5, 10, 25, 50, 75]:
+            for noise in ["talking", "white", "gaussian", ]:
+                percent = -1
+                print(f"Noise type:{noise}, strength: {strength}%")
+                for i, s in enumerate(d):
+                    h = int((i / len(d)) * 100)
+                    if h != percent:
+                        percent = h
+                        print(f"\r{h}% done in this iteration.", end="")
+                    sound = add_noise_to_sound(s, noise, strength)
+                    sound = torch.from_numpy(d.audio_processor.compute_mfccs(sound).squeeze(2)).unsqueeze(0).numpy()
+                    arr[i] = sound
+                print("100%")
+                arr.astype("<f4").tofile(f"./new_datasets/dataset_{noise}_{strength}_{variant}.bin")
+        break
+
+def plot_noise_response():
+    cnt = 1
+    data = np.zeros((3, 5, 51))
+    for j, noise_type in enumerate(["gaussian", "talking", "white"]):
+        for i, strength in enumerate([5, 10, 25, 50, 75]):
+            with open(f"./new_datasets/{cnt}.txt", "r") as f:
+                baseline = float(f.readline().split()[-1])
+                others = []
+                for line in f:
+                    others.append(float(line.split()[3][:-1]))
+                others = np.array(others)
+                data[j,i, :-1] = others
+                data[j,i, -1] = baseline
+                cnt += 3
+        cnt = (cnt + 1) % 15
+    #for asda in range(3):
+    for i in range(51):
+        plt.plot([5,10,25,50,75], data[:,:,i].T)
+    plt.xticks([5,10,25,50,75], [5,10,25,50,75])
+    plt.xlabel("% signal to noise ratio")
+    plt.ylabel("% accuracy")
+    plt.show()
 
 if __name__ == "__main__":
+    plot_noise_response()
+    quit()
+    add_noise_to_dataset_and_save()
+    quit()
+
     base_commands = "./data/speech_commands_v0.01/"
     d = VoiceCommandDataset(base_commands, "tune")
     torch.set_printoptions(profile="full")
@@ -333,7 +449,7 @@ if __name__ == "__main__":
     m = Honk()
     m.load_state_dict(torch.load("honk.pth.tar", map_location=None))
     fix_weight_files(m, "./new_weights_hopefully")
-    #for h in range(1):
+    # for h in range(1):
     #    for i in range(3):
     #        print(i + np.cumsum(d.lengths)[h], h)#
     #        confidences = m.forward(d[i + np.cumsum(d.lengths)[h]]).detach().numpy()
@@ -342,7 +458,7 @@ if __name__ == "__main__":
     h = 0
     i = 1 + np.cumsum(d.lengths)[h]
     arr_to_kotlin_code(d[i].detach().numpy(), "./kotlinarr.txt")
-    #plt.imshow(d[i])
+    # plt.imshow(d[i])
     confidences = m.forward(d[i]).detach().numpy()
     print(labelNames[np.argmax(confidences)], np.max(confidences), confidences)
     print()
@@ -351,6 +467,6 @@ if __name__ == "__main__":
     test_weights(m)
     quit()
     fix_weight_files(m)
-    #quit()
+    # quit()
     eval_files(m)
     eval_dataset(m)
