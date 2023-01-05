@@ -8,7 +8,10 @@ import torch
 import torch.nn as nn
 from torch.utils.data import Dataset
 import librosa
-from utils.manage_audio import AudioPreprocessor
+try:
+    from utils.manage_audio import AudioPreprocessor
+except:
+    pass
 import scipy.io.wavfile
 
 labelNames = "silence,unknown,yes,no,up,down,left,right,on,off,stop,go".split(",")
@@ -427,13 +430,13 @@ def plot_noise_response():
                 data[j,i, -1] = baseline
                 cnt += 3
         cnt = (cnt + 1) % 15
-    #for asda in range(3):
-    for i in range(51):
-        plt.plot([5,10,25,50,75], data[:,:,i].T)
-    plt.xticks([5,10,25,50,75], [5,10,25,50,75])
-    plt.xlabel("% signal to noise ratio")
-    plt.ylabel("% accuracy")
-    plt.show()
+        for i in range(51):
+            plt.plot([5,10,25,50,75], data[j,:,i].T)
+        plt.title(noise_type)
+        plt.xticks([5,10,25,50,75], [5,10,25,50,75])
+        plt.xlabel("% signal to noise ratio")
+        plt.ylabel("% accuracy")
+        plt.show()
 
 if __name__ == "__main__":
     plot_noise_response()
