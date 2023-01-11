@@ -427,6 +427,12 @@ def plot_noise_response():
                 data[j,i, -1] = baseline
                 cnt += 3
         cnt = (cnt + 1) % 15
+    datas = data.sum(axis=1).sum(axis=0)
+    inds = np.argsort(datas)
+    sorted_data = datas[inds]
+
+    generate_small_confs(inds[-10:])
+
     #for asda in range(3):
     for i in range(51):
         plt.plot([5,10,25,50,75], data[:,:,i].T)
@@ -434,6 +440,79 @@ def plot_noise_response():
     plt.xlabel("% signal to noise ratio")
     plt.ylabel("% accuracy")
     plt.show()
+
+def generate_small_confs(indexes):
+    new_confs = []
+    with open("./confs.txt", "r") as f:
+        start = f.readline()
+        curr_conf = []
+        for line in f:
+            curr_conf.append(line)
+            if line.startswith("-"):
+                new_confs.append(curr_conf)
+                curr_conf = []
+                continue
+
+    old_confs = []
+    with open("./confs_old.txt", "r") as f:
+        start1 = f.readline()
+        curr_conf = []
+        for line in f:
+            curr_conf.append(line)
+            if line.startswith("-"):
+                old_confs.append(curr_conf)
+                curr_conf = []
+                continue
+
+
+    new_confs = sorted(new_confs, key=lambda x: x[1].split()[1])
+    indexes2 = [int(x[1].split()[0][4:]) for x in new_confs]
+    print(indexes2)
+    old_confs = np.array(old_confs)[indexes2]
+    with open("./new_old_confs.txt", "w") as f:
+        f.write(start)
+        cnt = 0
+        for line in old_confs[0]:
+            if line.startswith("conf"):
+                l = line.split()
+                l[0] = f"conf{cnt}"
+                f.write(" ".join(l) + "\n")
+            else:
+                f.write(line)
+        for i, conf in enumerate(old_confs):
+            if i in indexes:
+                cnt += 1
+                for line in conf:
+
+                    if line.startswith("conf"):
+                        l = line.split()
+                        l[0] = f"conf{cnt}"
+                        f.write(" ".join(l) + "\n")
+                    else:
+                        f.write(line)
+
+
+    with open("./new_confs.txt", "w") as f:
+        f.write(start)
+        cnt = 0
+        for line in new_confs[0]:
+            if line.startswith("conf"):
+                l = line.split()
+                l[0] = f"conf{cnt}"
+                f.write(" ".join(l) + "\n")
+            else:
+                f.write(line)
+        for i, conf in enumerate(new_confs):
+            if i in indexes:
+                cnt += 1
+                for line in conf:
+
+                    if line.startswith("conf"):
+                        l = line.split()
+                        l[0] = f"conf{cnt}"
+                        f.write(" ".join(l) + "\n")
+                    else:
+                        f.write(line)
 
 if __name__ == "__main__":
     plot_noise_response()
